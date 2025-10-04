@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REGMESS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.22.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.2.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gray-900 text-white">
+    <div id="root"></div>
+    <script type="module">
+import React, { useState, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom/client';
+import { GoogleGenAI, Type } from "@google/genai";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+// --- ICONS ---
+
+const CalendarIcon = () => (
+    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" })
+    )
+);
+
+const ClockIcon = () => (
+    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" })
+    )
+);
+
+const LocationIcon = () => (
+    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" }),
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M15 11a3 3 0 11-6 0 3 3 0 016 0z" })
+    )
+);
+
+const DownloadCsvIcon = () => (
+    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" }),
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M8 12h4m4 0h.01" })
+    )
+);
+
+const DownloadImageIcon = () => (
+    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" }),
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M16 12a4 4 0 11-8 0 4 4 0 018 0z" }),
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M19 12h.01" })
+    )
+);
+
+const DownloadJsonIcon = () => (
+    React.createElement('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 },
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" }),
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M10 12a2 2 0 100-4 2 2 0 000 4z" }),
+        React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M14 12a2 2 0 100-4 2 2 0 000 4z" })
+    )
+);
+
+const SunIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('circle', { cx: "32", cy: "32", r: "12" }), React.createElement('path', { d: "M32 14V6" }), React.createElement('path', { d: "M32 58v-8" }), React.createElement('path', { d: "M19.9 19.9l-5.6-5.6" }), React.createElement('path', { d: "M49.7 49.7l-5.6-5.6" }), React.createElement('path', { d: "M14 32H6" }), React.createElement('path', { d: "M58 32h-8" }), React.createElement('path', { d: "M19.9 44.1l-5.6 5.6" }), React.createElement('path', { d: "M49.7 14.3l-5.6 5.6" }) ) );
+const PartlyCloudyIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('circle', { cx: "32", cy: "32", r: "9" }), React.createElement('path', { d: "M32 15V9" }), React.createElement('path', { d: "M32 55v-6" }), React.createElement('path', { d: "M20.61 20.61l-4.24-4.24" }), React.createElement('path', { d: "M47.63 47.63l-4.24-4.24" }), React.createElement('path', { d: "M15 32H9" }), React.createElement('path', { d: "M55 32h-6" }), React.createElement('path', { d: "M20.61 43.39l-4.24 4.24" }), React.createElement('path', { d: "M47.63 16.37l-4.24 4.24" }), React.createElement('path', { d: "M41.5 20.5A12.5 12.5 0 0019 20.5a12.53 12.53 0 00-2.5.3A10.5 10.5 0 006 31.3a10.43 10.43 0 0010.5 10.2H45a9.5 9.5 0 00.5-19A9.42 9.42 0 0041.5 20.5z" }) ) );
+const CloudyIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('path', { d: "M41.5 20.5A12.5 12.5 0 0019 20.5a12.53 12.53 0 00-2.5.3A10.5 10.5 0 006 31.3a10.43 10.43 0 0010.5 10.2H45a9.5 9.5 0 00.5-19A9.42 9.42 0 0041.5 20.5z" }) ) );
+const FogIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('path', { d: "M14 37h36" }), React.createElement('path', { d: "M18 43h28" }), React.createElement('path', { d: "M41.5 20.5A12.5 12.5 0 0019 20.5a12.53 12.53 0 00-2.5.3A10.5 10.5 0 006 31.3a10.43 10.43 0 0010.5 10.2H45a9.5 9.5 0 00.5-19A9.42 9.42 0 0041.5 20.5z" }) ) );
+const RainIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('path', { d: "M41.5 20.5A12.5 12.5 0 0019 20.5a12.53 12.53 0 00-2.5.3A10.5 10.5 0 006 31.3a10.43 10.43 0 0010.5 10.2H45a9.5 9.5 0 00.5-19A9.42 9.42 0 0041.5 20.5z" }), React.createElement('path', { d: "M24 48l-4 6" }), React.createElement('path', { d: "M32 48l-4 6" }), React.createElement('path', { d: "M40 48l-4 6" }) ) );
+const SnowIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('path', { d: "M41.5 20.5A12.5 12.5 0 0019 20.5a12.53 12.53 0 00-2.5.3A10.5 10.5 0 006 31.3a10.43 10.43 0 0010.5 10.2H45a9.5 9.5 0 00.5-19A9.42 9.42 0 0041.5 20.5z" }), React.createElement('path', { d: "M28 47l-1.41 1.41" }), React.createElement('path', { d: "M28 53l1.41-1.41" }), React.createElement('path', { d: "M25.17 50.17H28" }), React.createElement('path', { d: "M30.83 50.17H32" }), React.createElement('path', { d: "M36 47l-1.41 1.41" }), React.createElement('path', { d: "M36 53l1.41-1.41" }), React.createElement('path', { d: "M33.17 50.17H36" }), React.createElement('path', { d: "M38.83 50.17H40" }) ) );
+const ThunderstormIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", className: className, fill: "none", stroke: "currentColor", strokeWidth: "3" }, React.createElement('path', { d: "M41.5 20.5A12.5 12.5 0 0019 20.5a12.53 12.53 0 00-2.5.3A10.5 10.5 0 006 31.3a10.43 10.43 0 0010.5 10.2H45a9.5 9.5 0 00.5-19A9.42 9.42 0 0041.5 20.5z" }), React.createElement('path', { d: "M34 44l-6 8h8l-4 8" }) ) );
+const ConditionsIcon = ({ className }) => ( React.createElement( 'svg', { xmlns: "http://www.w3.org/2000/svg", className: className, fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 2 }, React.createElement('path', { strokeLinecap: "round", strokeLinejoin: "round", d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" }) ) );
+
+
+const WeatherIcon = ({ code, className = "h-8 w-8", probability = 0 }) => {
+  const props = { className };
+  const isRainy = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code);
+  const isThunder = [95, 96, 99].includes(code);
+
+  if (probability >= 40 || isThunder) {
+    return React.createElement(ThunderstormIcon, props);
+  }
+  if (isRainy) {
+    return React.createElement(RainIcon, props);
+  }
+
+  switch (code) {
+    case 0: case 1: return React.createElement(SunIcon, props);
+    case 2: return React.createElement(PartlyCloudyIcon, props);
+    case 3: return React.createElement(CloudyIcon, props);
+    case 45: case 48: return React.createElement(FogIcon, props);
+    case 71: case 73: case 75: case 77: case 85: case 86: return React.createElement(SnowIcon, props);
+    default: return React.createElement(ConditionsIcon, props);
+  }
+};
+
+
+// --- SERVICES ---
+
+const WEATHER_CODE_MAP = { 0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Depositing rime fog', 51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle', 56: 'Light freezing drizzle', 57: 'Dense freezing drizzle', 61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain', 66: 'Light freezing rain', 67: 'Heavy freezing rain', 71: 'Slight snow fall', 73: 'Moderate snow fall', 75: 'Heavy snow fall', 77: 'Snow grains', 80: 'Slight rain showers', 81: 'Moderate rain showers', 82: 'Violent rain showers', 85: 'Slight snow showers', 86: 'Heavy snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm with slight hail', 99: 'Thunderstorm with heavy hail' };
+const getWeatherCodeDescription = (code) => WEATHER_CODE_MAP[code] || 'Unknown';
+
+const getCoordinates = async (location) => {
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.results && data.results.length > 0 ? { latitude: data.results[0].latitude, longitude: data.results[0].longitude } : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const getWeather = async (lat, lon, date) => {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&daily=precipitation_probability_mean&models=gfs_global&start_date=${date}&end_date=${date}&timezone=auto`;
+  try {
+    const response = await fetch(url);
+    return response.ok ? await response.json() : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const getHistoricalWeather = async (lat, lon, date) => {
+    const targetDate = new Date(date);
+    const month = targetDate.getMonth() + 1;
+    const day = targetDate.getDate();
+    const currentYear = new Date().getFullYear();
+    const promises = Array.from({ length: 20 }, (_, i) => {
+        const year = currentYear - i - 1;
+        const historicalDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${historicalDate}&end_date=${historicalDate}&daily=weather_code,temperature_2m_mean,precipitation_sum,wind_speed_10m_mean&timezone=auto`;
+        return fetch(url).then(res => res.json());
+    });
+    const results = await Promise.all(promises);
+    const validResults = results.filter(res => res.daily && res.daily.precipitation_sum && res.daily.precipitation_sum[0] != null);
+    if (validResults.length === 0) throw new Error("Could not retrieve any historical weather data.");
+    const rainyYears = validResults.filter(res => res.daily.precipitation_sum[0] > 0.1).length;
+    const temps = validResults.map(res => res.daily.temperature_2m_mean[0]);
+    const winds = validResults.map(res => res.daily.wind_speed_10m_mean[0]);
+    const weatherCodes = validResults.map(res => res.daily.weather_code[0]);
+    const codeFrequency = weatherCodes.reduce((acc, code) => ({ ...acc, [code]: (acc[code] || 0) + 1 }), {});
+    const mostCommonCode = parseInt(Object.keys(codeFrequency).reduce((a, b) => codeFrequency[a] > codeFrequency[b] ? a : b));
+    return {
+        rainyYears,
+        totalYears: validResults.length,
+        avgTemp: temps.reduce((a, b) => a + b, 0) / temps.length,
+        avgWind: winds.reduce((a, b) => a + b, 0) / winds.length,
+        conditions: getWeatherCodeDescription(mostCommonCode),
+        mostCommonCode,
+    };
+};
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+const getForecastSummary = async (data) => {
+  const isHistorical = data.totalYears !== undefined;
+  const prompt = isHistorical ? `
+      You are a climatologist for the 'REGMESS' app.
+      Based on historical data for this date over ${data.totalYears} years:
+      - Rained in ${data.rainyYears} years.
+      - Avg Temp: ${data.avgTemp.toFixed(1)}°C, Avg Wind: ${data.avgWind.toFixed(1)} km/h
+      - Common Condition: "${data.conditions}"
+      Analyze this and provide a JSON response. 'rainProbability' is (${data.rainyYears} / ${data.totalYears}) * 100. 'condition' must be one of: 'very wet', 'very windy', 'very hot', 'hot', 'standard', 'cold', 'very cold'.
+      Rules: 1. Rain >= 40% of years -> 'very wet'. 2. Not 'very wet' & Wind > 40 km/h -> 'very windy'. 3. Else, based on Temp: >25°C -> 'very hot', 18-25°C -> 'hot', 8-17.9°C -> 'standard', 0-7.9°C -> 'cold', <0°C -> 'very cold'.`
+    : `
+      You are a weather analyst for the 'REGMESS' app.
+      Based on this weather data:
+      - Precip. Prob: ${data.precipitation_probability}%, Temp: ${data.temperature_2m}°C, Wind: ${data.wind_speed_10m} km/h
+      - Weather: "${getWeatherCodeDescription(data.weather_code)}"
+      Analyze this and provide a JSON response. 'rainProbability' must be ${data.precipitation_probability}. 'condition' must be one of: 'very wet', 'very windy', 'very hot', 'hot', 'standard', 'cold', 'very cold'.
+      Rules: 1. Precip. Prob. >= 40% -> 'very wet'. 2. Not 'very wet' & Wind > 50 km/h -> 'very windy'. 3. Else, based on Temp: >30°C -> 'very hot', 20-30°C -> 'hot', 10-19.9°C -> 'standard', 0-9.9°C -> 'cold', <0°C -> 'very cold'.`;
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            condition: { type: Type.STRING },
+            rainProbability: { type: Type.NUMBER },
+          },
+          required: ["condition", "rainProbability"],
+        },
+      },
+    });
+    return JSON.parse(response.text.trim());
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    throw new Error("Failed to get AI forecast summary.");
+  }
+};
+
+// --- COMPONENTS ---
+
+const Loader = () => (
+  React.createElement('div', { className: "flex flex-col items-center justify-center my-12 text-center" },
+    React.createElement('div', { className: "w-12 h-12 border-4 border-purple-400 border-t-transparent rounded-full animate-spin" }),
+    React.createElement('p', { className: "mt-4 text-gray-300" }, "Consulting cosmic archives & weather models...")
+  )
+);
+
+const DownloadButtons = ({ forecast, eventDetails, chartRef }) => {
+    const isHistorical = forecast.forecastType === 'historical';
+    const filenameBase = `forecast_${eventDetails.location.replace(/[^a-zA-Z0-9]/g, '_')}_${eventDetails.date}`;
+
+    const createExportData = () => {
+        const base = { query: { ...eventDetails, forecastType: forecast.forecastType }, forecast: forecast.gemini };
+        if (isHistorical) {
+            return { ...base, data: forecast.weather, metadata: { units: { avgTemp: '°C', avgWind: 'km/h' }, dataSource: { name: "Open-Meteo Historical API", url: "https://open-meteo.com/en/docs/historical-weather-api" } } };
+        }
+        const weather = forecast.weather;
+        return { ...base, data: { forEventTime: weather, hourlyOutlook: forecast.hourly }, metadata: { units: { temperature_2m: '°C', precipitation_probability: '%', daily_precipitation_probability_mean: '%', wind_speed_10m: 'km/h' }, dataSource: { name: "Open-Meteo Forecast API", url: "https://open-meteo.com/en/docs" } } };
+    };
+
+    const downloadFile = (content, filename, contentType) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([content], { type: contentType }));
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+
+    const handleJsonDownload = () => downloadFile(JSON.stringify(createExportData(), null, 2), `${filenameBase}.json`, 'application/json');
+
+    const handleCsvDownload = () => {
+        const data = createExportData();
+        let csvContent;
+        if (isHistorical) {
+            const weather = data.data;
+            const headers = "location,date,forecast_type,forecast_condition,forecast_rain_probability_percent,historical_avg_temp_c,historical_avg_wind_kmh,historical_rainy_years,historical_total_years,historical_common_conditions\n";
+            csvContent = headers + [`"${eventDetails.location}"`, eventDetails.date, "historical", data.forecast.condition, data.forecast.rainProbability, weather.avgTemp.toFixed(1), weather.avgWind.toFixed(1), weather.rainyYears, weather.totalYears, `"${weather.conditions}"`].join(',');
+        } else {
+            const weather = data.data.forEventTime;
+            const hourly = data.data.hourlyOutlook || [];
+            const headers = "location,date,time,forecast_condition,forecast_rain_probability_percent,event_time_temp_c,event_time_precip_prob_percent,event_time_daily_avg_precip_prob_percent,event_time_wind_kmh,event_time_weather_desc,hourly_time,hourly_precip_prob_percent\n";
+            const mainRow = [`"${eventDetails.location}"`, eventDetails.date, eventDetails.time, data.forecast.condition, data.forecast.rainProbability, weather.temperature_2m, weather.precipitation_probability, weather.daily_precipitation_probability_mean, weather.wind_speed_10m, `"${getWeatherCodeDescription(weather.weather_code)}"`].join(',');
+            csvContent = headers + (hourly.length > 0 ? hourly.map(h => `${mainRow},${h.time},${h.precipitation}`).join('\n') : mainRow + ",,");
+        }
+        downloadFile(csvContent, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
+    };
+    
+    const handleChartDownload = () => {
+        const svgElement = chartRef.current?.querySelector('svg');
+        if (!svgElement) return alert('Could not find chart to download.');
+        const urlApi = window.URL || window.webkitURL;
+        if (!urlApi) return alert('Browser does not support this feature.');
+        const svgString = new XMLSerializer().serializeToString(svgElement);
+        const url = urlApi.createObjectURL(new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' }));
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return urlApi.revokeObjectURL(url);
+        const svgSize = svgElement.getBoundingClientRect();
+        canvas.width = svgSize.width * 2;
+        canvas.height = svgSize.height * 2;
+        ctx.scale(2, 2);
+        const img = new Image();
+        img.onload = () => {
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = `chart_${filenameBase}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            urlApi.revokeObjectURL(url);
+        };
+        img.onerror = () => { urlApi.revokeObjectURL(url); alert('Error preparing chart image.'); };
+        img.src = url;
+    };
+
+    const Button = ({ onClick, children }) => React.createElement('button', { onClick, className: "flex items-center gap-2 w-full sm:w-auto justify-center py-2 px-4 border border-white/20 rounded-lg text-sm font-medium text-white bg-gray-700/50 hover:bg-gray-600/50 transition" }, children);
+
+    return (
+        React.createElement('div', { className: "border-t border-white/10 pt-6" },
+            React.createElement('h3', { className: "text-lg font-semibold text-purple-300 mb-4 text-center" }, "Download Options"),
+            React.createElement('div', { className: "flex flex-col sm:flex-row justify-center items-center gap-4" },
+                React.createElement(Button, { onClick: handleJsonDownload }, React.createElement(DownloadJsonIcon), React.createElement('span', null, "Data (JSON)")),
+                React.createElement(Button, { onClick: handleCsvDownload }, React.createElement(DownloadCsvIcon), React.createElement('span', null, "Data (CSV)")),
+                !isHistorical && React.createElement(Button, { onClick: handleChartDownload }, React.createElement(DownloadImageIcon), React.createElement('span', null, "Chart (PNG)"))
+            )
+        )
+    );
+};
+
+const groupedCities = [
+    { country: "Argentina", cities: [{ name: "Buenos Aires", value: "Buenos Aires, Argentina" }] },
+    { country: "Australia", cities: [{ name: "Sydney", value: "Sydney, Australia" }] },
+    { country: "Brazil", cities: [{ name: "Rio de Janeiro", value: "Rio de Janeiro, Brazil" }] },
+    { country: "Canada", cities: [{ name: "Toronto", value: "Toronto, Canada" }] },
+    { country: "China", cities: [{ name: "Shanghai", value: "Shanghai, China" }] },
+    { country: "Egypt", cities: [{ name: "Cairo", value: "Cairo, Egypt" }] },
+    { country: "France", cities: [{ name: "Paris", value: "Paris, France" }] },
+    { country: "Germany", cities: [{ name: "Berlin", value: "Berlin, Germany" }] },
+    { country: "India", cities: [{ name: "Mumbai", value: "Mumbai, India" }] },
+    { country: "Italy", cities: [{ name: "Rome", value: "Rome, Italy" }] },
+    { country: "Japan", cities: [{ name: "Tokyo", value: "Tokyo, Japan" }] },
+    { country: "Russia", cities: [{ name: "Moscow", value: "Moscow, Russia" }] },
+    { country: "Singapore", cities: [{ name: "Singapore", value: "Singapore" }] },
+    { country: "South Africa", cities: [{ name: "Cape Town", value: "Cape Town, South Africa" }] },
+    { country: "Switzerland", cities: [{ name: "Zurich", value: "Zurich, Switzerland" }] },
+    { country: "UAE", cities: [{ name: "Dubai", value: "Dubai, UAE" }] },
+];
+
+const EventForm = ({ onSubmit, isLoading }) => {
+  const [location, setLocation] = useState(groupedCities[0].cities[0].value);
+  const today = new Date();
+  const nextWeek = new Date(today);
+  nextWeek.setDate(today.getDate() + 7);
+  const [date, setDate] = useState(nextWeek.toISOString().split('T')[0]);
+  const [time, setTime] = useState('14:00');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (location && date && time) onSubmit({ location, date, time });
+  };
+  
+  const InputWrapper = ({ children, label, htmlFor }) => React.createElement('div', null, React.createElement('label', { htmlFor, className: "block text-sm font-medium text-gray-300" }, label), React.createElement('div', { className: "mt-1 relative" }, children));
+  const commonInputClass = "w-full bg-gray-900/50 border border-white/20 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition";
+
+  return (
+    React.createElement('form', { onSubmit: handleSubmit, className: "space-y-6" },
+      React.createElement(InputWrapper, { label: "Location", htmlFor: "location" },
+        React.createElement(LocationIcon),
+        React.createElement('select', { id: "location", value: location, onChange: (e) => setLocation(e.target.value), className: `${commonInputClass} appearance-none`, required: true },
+            groupedCities.map(group => (
+                React.createElement('optgroup', { key: group.country, label: group.country, className: "font-bold text-purple-300" },
+                    group.cities.map(city => React.createElement('option', { key: city.value, value: city.value, className: "bg-gray-800 text-white font-normal" }, city.name))
+                )
+            ))
+        )
+      ),
+      React.createElement('div', { className: "grid grid-cols-1 sm:grid-cols-2 gap-6" },
+        React.createElement(InputWrapper, { label: "Date", htmlFor: "date" },
+          React.createElement(CalendarIcon),
+          React.createElement('input', { type: "date", id: "date", value: date, onChange: (e) => setDate(e.target.value), className: commonInputClass, min: new Date().toISOString().split('T')[0], required: true })
+        ),
+        React.createElement(InputWrapper, { label: "Time", htmlFor: "time" },
+          React.createElement(ClockIcon),
+          React.createElement('input', { type: "time", id: "time", value: time, onChange: (e) => setTime(e.target.value), className: commonInputClass, required: true })
+        )
+      ),
+      React.createElement('div', null,
+        React.createElement('button', { type: "submit", disabled: isLoading, className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105" },
+          isLoading ? 'Consulting the Cosmos...' : 'Check Forecast'
+        )
+      )
+    )
+  );
+};
+
+const HistoricalInfoBanner = () => React.createElement('div', { className: "bg-purple-900/40 border border-purple-700 text-purple-200 px-4 py-3 rounded-lg text-center mb-6" }, React.createElement('p', { className: "font-semibold" }, "Climatological Forecast"), React.createElement('p', { className: "text-sm" }, "This long-range forecast is based on historical weather trends over the past 20 years for this date."));
+const DailyStats = ({ weather }) => React.createElement(React.Fragment, null, React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Prob. (Event Time)"), React.createElement('p', { className: "text-2xl font-semibold" }, `${weather.precipitation_probability}%`)), weather.daily_precipitation_probability_mean !== null && React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Daily Avg. Rain"), React.createElement('p', { className: "text-2xl font-semibold" }, `${Math.round(weather.daily_precipitation_probability_mean)}%`)), React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Temperature"), React.createElement('p', { className: "text-2xl font-semibold" }, `${Math.round(weather.temperature_2m)}°C`)), React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Wind Speed"), React.createElement('p', { className: "text-2xl font-semibold" }, `${Math.round(weather.wind_speed_10m)} km/h`)), React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Conditions"), React.createElement('div', { className: "flex items-center justify-center gap-2 mt-1" }, React.createElement(WeatherIcon, { code: weather.weather_code, className: "h-7 w-7 text-gray-300", probability: weather.precipitation_probability }), React.createElement('p', { className: "text-xl font-semibold" }, getWeatherCodeDescription(weather.weather_code)))));
+const HistoricalStats = ({ weather }) => React.createElement(React.Fragment, null, React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Rainy Days"), React.createElement('p', { className: "text-2xl font-semibold" }, `${weather.rainyYears} / ${weather.totalYears} yrs`)), React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Avg. Temp"), React.createElement('p', { className: "text-2xl font-semibold" }, `${Math.round(weather.avgTemp)}°C`)), React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Avg. Wind"), React.createElement('p', { className: "text-2xl font-semibold" }, `${Math.round(weather.avgWind)} km/h`)), React.createElement('div', null, React.createElement('p', { className: "text-sm text-gray-400" }, "Commonly"), React.createElement('div', { className: "flex items-center justify-center gap-2 mt-1" }, React.createElement(WeatherIcon, { code: weather.mostCommonCode, className: "h-7 w-7 text-gray-300" }), React.createElement('p', { className: "text-xl font-semibold" }, weather.conditions))));
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        const data = payload[0]?.payload;
+        return React.createElement('div', { className: "bg-slate-800/80 backdrop-blur-sm border border-slate-600 rounded-lg p-3 text-white shadow-lg" },
+            React.createElement('p', { className: "text-sm font-semibold mb-2" }, `Time: ${label}`),
+            React.createElement('p', { className: "text-sm text-purple-300" }, `Chance of Rain: ${data.precipitation}%`),
+            React.createElement('p', { className: "text-sm text-orange-300" }, `Temperature: ${data.temperature}°C`),
+            React.createElement('p', { className: "text-sm text-cyan-300" }, `Wind: ${data.wind} km/h`)
+        );
+    }
+    return null;
+};
+
+
+const ForecastDisplay = ({ forecast, eventDetails }) => {
+  const { gemini, weather, hourly, forecastType } = forecast;
+  const isHistorical = forecastType === 'historical';
+  const chartRef = useRef(null);
+  const eventTime = new Date(`${eventDetails.date}T${eventDetails.time}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const eventDate = new Date(eventDetails.date + 'T00:00:00').toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const getBackgroundColor = (condition, probability) => {
+    if (condition === 'very wet' || probability >= 40) return 'bg-blue-900/40';
+    if (condition === 'very windy') return 'bg-teal-900/40';
+    if (condition === 'very hot') return 'bg-red-900/40';
+    if (condition === 'hot') return 'bg-orange-900/40';
+    if (condition === 'cold') return 'bg-cyan-900/40';
+    if (condition === 'very cold') return 'bg-sky-900/40';
+    return 'bg-green-900/40';
+  };
+
+  return (
+    React.createElement('div', { className: "mt-8 animate-fade-in" },
+        React.createElement('div', { className: `text-center p-8 rounded-t-2xl border-x border-t border-white/10 ${getBackgroundColor(gemini.condition, gemini.rainProbability)}` },
+            React.createElement('p', { className: "text-xl text-gray-300" }, `Forecast for ${eventDetails.location} on`),
+            React.createElement('p', { className: "text-xl text-gray-300" }, eventDate),
+            React.createElement('div', { className: "flex justify-center items-center gap-4 mt-4 mb-2" },
+                React.createElement(WeatherIcon, { code: isHistorical ? weather.mostCommonCode : weather.weather_code, className: "h-16 w-16 text-white", probability: gemini.rainProbability }),
+                React.createElement('h2', { className: "text-5xl font-bold tracking-tight capitalize" }, gemini.condition)
+            ),
+            React.createElement('p', { className: "text-6xl font-bold" }, `${Math.round(gemini.rainProbability)}%`),
+            React.createElement('p', { className: "text-lg text-gray-300" }, "Chance of Rain")
+        ),
+        React.createElement('div', { className: "bg-white/5 p-8 rounded-b-2xl shadow-2xl border border-white/10 backdrop-blur-sm space-y-8" },
+            isHistorical && React.createElement(HistoricalInfoBanner),
+            !isHistorical && hourly && React.createElement('div', null, React.createElement('h3', { className: "text-lg font-semibold text-purple-300 mb-4" }, `Hourly Outlook (around ${eventTime})`), React.createElement('div', { className: "h-64 w-full", ref: chartRef }, React.createElement(ResponsiveContainer, { width: "100%", height: "100%" }, React.createElement(LineChart, { data: hourly, margin: { top: 5, right: 20, left: -10, bottom: 5 } }, React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "rgba(255, 255, 255, 0.1)" }), React.createElement(XAxis, { dataKey: "time", stroke: "#9ca3af", fontSize: 12 }), React.createElement(YAxis, { unit: "%", stroke: "#9ca3af", fontSize: 12, domain: [0, 100] }), React.createElement(Tooltip, { content: React.createElement(CustomTooltip) }), React.createElement(Line, { type: "monotone", dataKey: "precipitation", name: "Chance of Rain", stroke: "#a78bfa", strokeWidth: 3, dot: { r: 4, strokeWidth: 2, fill: '#a78bfa', fillOpacity: 0.8 }, activeDot: { r: 8, stroke: '#c4b5fd', strokeWidth: 2 } })))),),
+            React.createElement('div', { className: "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center border-t border-white/10 pt-6" }, isHistorical ? React.createElement(HistoricalStats, { weather: weather }) : React.createElement(DailyStats, { weather: weather })),
+            React.createElement(DownloadButtons, { forecast: forecast, eventDetails: eventDetails, chartRef: chartRef })
+        )
+    )
+  );
+};
+
+const App = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [forecast, setForecast] = useState(null);
+  const [eventDetails, setEventDetails] = useState(null);
+
+  const handleFormSubmit = useCallback(async (details) => {
+    setIsLoading(true);
+    setError(null);
+    setForecast(null);
+    setEventDetails(details);
+    try {
+      const coordinates = await getCoordinates(details.location);
+      if (!coordinates) throw new Error("Could not find location. Please try a more specific address or city.");
+      const eventDate = new Date(details.date + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 15) {
+        const weather = await getWeather(coordinates.latitude, coordinates.longitude, details.date);
+        if (!weather || !weather.hourly || weather.hourly.time.length === 0) throw new Error("Could not retrieve weather data.");
+        const eventDateTime = new Date(`${details.date}T${details.time}`);
+        const eventHourIndex = weather.hourly.time.findIndex(t => new Date(t).getHours() === eventDateTime.getHours());
+        if (eventHourIndex === -1) throw new Error("Weather data for the specific time is not available.");
+        const relevantWeatherData = {
+          time: weather.hourly.time[eventHourIndex],
+          temperature_2m: weather.hourly.temperature_2m[eventHourIndex],
+          precipitation_probability: weather.hourly.precipitation_probability[eventHourIndex],
+          weather_code: weather.hourly.weather_code[eventHourIndex],
+          wind_speed_10m: weather.hourly.wind_speed_10m[eventHourIndex],
+          daily_precipitation_probability_mean: weather.daily?.precipitation_probability_mean?.[0] ?? null,
+        };
+        const chartStart = Math.max(0, eventHourIndex - 3);
+        const chartEnd = Math.min(weather.hourly.time.length, eventHourIndex + 4);
+        const hourlyChartData = weather.hourly.time.slice(chartStart, chartEnd).map((time, i) => ({ 
+            time: new Date(time).toLocaleTimeString([], { hour: 'numeric', hour12: true }), 
+            precipitation: weather.hourly.precipitation_probability[chartStart + i],
+            temperature: Math.round(weather.hourly.temperature_2m[chartStart + i]),
+            wind: Math.round(weather.hourly.wind_speed_10m[chartStart + i]),
+        }));
+        const geminiResponse = await getForecastSummary(relevantWeatherData);
+        setForecast({ forecastType: 'daily', gemini: geminiResponse, weather: relevantWeatherData, hourly: hourlyChartData });
+      } else {
+        const historicalData = await getHistoricalWeather(coordinates.latitude, coordinates.longitude, details.date);
+        const geminiResponse = await getForecastSummary(historicalData);
+        setForecast({ forecastType: 'historical', gemini: geminiResponse, weather: historicalData });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unknown error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  return (
+    React.createElement('div', { className: "min-h-screen bg-gray-900 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.3),rgba(255,255,255,0))]"},
+      React.createElement('main', { className: "container mx-auto px-4 py-8 md:py-16" },
+        React.createElement('header', { className: "text-center mb-12" },
+          React.createElement('h1', { className: "text-4xl md:text-6xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-400 to-white" }, "REGMESS"),
+          React.createElement('p', { className: "mt-4 text-lg text-gray-300 max-w-2xl mx-auto" }, "Calculating the chance of rain for your outdoor events. A blend of German 'Regen' (rain) & 'Messen' (to measure), powered by NASA data and AI.")
+        ),
+        React.createElement('div', { className: "max-w-2xl mx-auto" },
+            React.createElement('div', { className: "bg-white/5 p-8 rounded-2xl shadow-2xl border border-white/10 backdrop-blur-sm" },
+                React.createElement(EventForm, { onSubmit: handleFormSubmit, isLoading: isLoading })
+            ),
+            isLoading && React.createElement(Loader),
+            error && React.createElement('div', { className: "mt-8 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-center" }, React.createElement('p', { className: "font-semibold" }, "Oh no! An error occurred."), React.createElement('p', null, error)),
+            forecast && eventDetails && !isLoading && React.createElement(ForecastDisplay, { forecast: forecast, eventDetails: eventDetails })
+        ),
+        React.createElement('footer', { className: "text-center mt-16 text-gray-500 text-sm" },
+          React.createElement('p', null, "This project utilizes data derived from sources like the NASA GPM mission, aggregated through open meteorological APIs."),
+          React.createElement('p', null, "© Lemniscate, 2025")
+        )
+      )
+    )
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(React.StrictMode, null, React.createElement(App)));
+    </script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "REGMESS",
+  "description": "Calculating the chance of rain for your outdoor events. A blend of German 'Regen' (rain) & 'Messen' (to measure), powered by NASA data and AI. This is a standalone, single-file application that can be run locally in any modern web browser.",
+  "requestFramePermissions": []
+}
