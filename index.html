@@ -8,9 +8,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <style>
       body {
         font-family: 'Inter', sans-serif;
+      }
+      .leaflet-container {
+        z-index: 0; /* Ensures map is properly layered */
+      }
+      .leaflet-control-attribution a {
+        color: #374151; /* Dark gray text for better visibility on light map */
       }
     </style>
   <script type="importmap">
@@ -29,10 +37,10 @@
   <body class="bg-gray-900 text-white">
     <div id="root"></div>
     <script type="module">
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { GoogleGenAI, Type } from "@google/genai";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, Cell } from 'recharts';
 
 // --- ICONS ---
 
@@ -116,15 +124,29 @@ const WeatherIcon = ({ code, className = "h-8 w-8", probability = 0 }) => {
 const WEATHER_CODE_MAP = { 0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Depositing rime fog', 51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle', 56: 'Light freezing drizzle', 57: 'Dense freezing drizzle', 61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain', 66: 'Light freezing rain', 67: 'Heavy freezing rain', 71: 'Slight snow fall', 73: 'Moderate snow fall', 75: 'Heavy snow fall', 77: 'Snow grains', 80: 'Slight rain showers', 81: 'Moderate rain showers', 82: 'Violent rain showers', 85: 'Slight snow showers', 86: 'Heavy snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm with slight hail', 99: 'Thunderstorm with heavy hail' };
 const getWeatherCodeDescription = (code) => WEATHER_CODE_MAP[code] || 'Unknown';
 
-const getCoordinates = async (location) => {
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
+const geocode = async (query) => {
+  if (!query) return [];
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
   try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data.results && data.results.length > 0 ? { latitude: data.results[0].latitude, longitude: data.results[0].longitude } : null;
+    const response = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!response.ok) return [];
+    return await response.json();
   } catch (error) {
-    return null;
+    console.error("Geocoding error:", error);
+    return [];
+  }
+};
+
+const reverseGeocode = async (lat, lon) => {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
+  try {
+    const response = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!response.ok) return "Unknown location";
+    const data = await response.json();
+    return data.display_name || "Unknown location";
+  } catch (error) {
+    console.error("Reverse geocoding error:", error);
+    return "Location lookup failed";
   }
 };
 
@@ -222,7 +244,7 @@ const Loader = () => (
 
 const DownloadButtons = ({ forecast, eventDetails, chartRef }) => {
     const isHistorical = forecast.forecastType === 'historical';
-    const filenameBase = `forecast_${eventDetails.location.replace(/[^a-zA-Z0-9]/g, '_')}_${eventDetails.date}`;
+    const filenameBase = `forecast_${eventDetails.location.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30)}_${eventDetails.date}`;
 
     const createExportData = () => {
         const base = { query: { ...eventDetails, forecastType: forecast.forecastType }, forecast: forecast.gemini };
@@ -249,14 +271,14 @@ const DownloadButtons = ({ forecast, eventDetails, chartRef }) => {
         let csvContent;
         if (isHistorical) {
             const weather = data.data;
-            const headers = "location,date,forecast_type,forecast_condition,forecast_rain_probability_percent,historical_avg_temp_c,historical_avg_wind_kmh,historical_rainy_years,historical_total_years,historical_common_conditions\n";
-            csvContent = headers + [`"${eventDetails.location}"`, eventDetails.date, "historical", data.forecast.condition, data.forecast.rainProbability, weather.avgTemp.toFixed(1), weather.avgWind.toFixed(1), weather.rainyYears, weather.totalYears, `"${weather.conditions}"`].join(',');
+            const headers = "location,latitude,longitude,date,forecast_type,forecast_condition,forecast_rain_probability_percent,historical_avg_temp_c,historical_avg_wind_kmh,historical_rainy_years,historical_total_years,historical_common_conditions\n";
+            csvContent = headers + [`"${eventDetails.location}"`, eventDetails.position.lat, eventDetails.position.lng, eventDetails.date, "historical", data.forecast.condition, data.forecast.rainProbability, weather.avgTemp.toFixed(1), weather.avgWind.toFixed(1), weather.rainyYears, weather.totalYears, `"${weather.conditions}"`].join(',');
         } else {
             const weather = data.data.forEventTime;
             const hourly = data.data.hourlyOutlook || [];
-            const headers = "location,date,time,forecast_condition,forecast_rain_probability_percent,event_time_temp_c,event_time_precip_prob_percent,event_time_daily_avg_precip_prob_percent,event_time_wind_kmh,event_time_weather_desc,hourly_time,hourly_precip_prob_percent\n";
-            const mainRow = [`"${eventDetails.location}"`, eventDetails.date, eventDetails.time, data.forecast.condition, data.forecast.rainProbability, weather.temperature_2m, weather.precipitation_probability, weather.daily_precipitation_probability_mean, weather.wind_speed_10m, `"${getWeatherCodeDescription(weather.weather_code)}"`].join(',');
-            csvContent = headers + (hourly.length > 0 ? hourly.map(h => `${mainRow},${h.time},${h.precipitation}`).join('\n') : mainRow + ",,");
+            const headers = "location,latitude,longitude,date,time,forecast_condition,forecast_rain_probability_percent,event_time_temp_c,event_time_precip_prob_percent,event_time_daily_avg_precip_prob_percent,event_time_wind_kmh,event_time_weather_desc,hourly_time,hourly_precip_prob_percent,hourly_temp_c\n";
+            const mainRow = [`"${eventDetails.location}"`, eventDetails.position.lat, eventDetails.position.lng, eventDetails.date, eventDetails.time, data.forecast.condition, data.forecast.rainProbability, weather.temperature_2m, weather.precipitation_probability, weather.daily_precipitation_probability_mean, weather.wind_speed_10m, `"${getWeatherCodeDescription(weather.weather_code)}"`].join(',');
+            csvContent = headers + (hourly.length > 0 ? hourly.map(h => `${mainRow},${h.time},${h.precipitation},${h.temperature}`).join('\n') : mainRow + ",,");
         }
         downloadFile(csvContent, `${filenameBase}.csv`, 'text/csv;charset=utf-8;');
     };
@@ -306,53 +328,149 @@ const DownloadButtons = ({ forecast, eventDetails, chartRef }) => {
     );
 };
 
-const groupedCities = [
-    { country: "Argentina", cities: [{ name: "Buenos Aires", value: "Buenos Aires, Argentina" }] },
-    { country: "Australia", cities: [{ name: "Sydney", value: "Sydney, Australia" }] },
-    { country: "Brazil", cities: [{ name: "Rio de Janeiro", value: "Rio de Janeiro, Brazil" }] },
-    { country: "Canada", cities: [{ name: "Toronto", value: "Toronto, Canada" }] },
-    { country: "China", cities: [{ name: "Shanghai", value: "Shanghai, China" }] },
-    { country: "Egypt", cities: [{ name: "Cairo", value: "Cairo, Egypt" }] },
-    { country: "France", cities: [{ name: "Paris", value: "Paris, France" }] },
-    { country: "Germany", cities: [{ name: "Berlin", value: "Berlin, Germany" }] },
-    { country: "India", cities: [{ name: "Mumbai", value: "Mumbai, India" }] },
-    { country: "Italy", cities: [{ name: "Rome", value: "Rome, Italy" }] },
-    { country: "Japan", cities: [{ name: "Tokyo", value: "Tokyo, Japan" }] },
-    { country: "Russia", cities: [{ name: "Moscow", value: "Moscow, Russia" }] },
-    { country: "Singapore", cities: [{ name: "Singapore", value: "Singapore" }] },
-    { country: "South Africa", cities: [{ name: "Cape Town", value: "Cape Town, South Africa" }] },
-    { country: "Switzerland", cities: [{ name: "Zurich", value: "Zurich, Switzerland" }] },
-    { country: "UAE", cities: [{ name: "Dubai", value: "Dubai, UAE" }] },
-];
+const MapComponent = ({ onLocationChange, position }) => {
+    const mapContainerRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const markerRef = useRef(null);
+
+    useEffect(() => {
+        if (mapContainerRef.current && !mapInstanceRef.current && window.L) {
+            const map = L.map(mapContainerRef.current, { zoomControl: false }).setView([position.lat, position.lng], 5);
+            mapInstanceRef.current = map;
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            markerRef.current = L.marker([position.lat, position.lng]).addTo(map);
+
+            map.on('click', (e) => {
+                const { lat, lng } = e.latlng;
+                onLocationChange({ lat, lng });
+            });
+        }
+    }, []); // Empty dependency array to run only once
+
+    useEffect(() => {
+        if (mapInstanceRef.current && markerRef.current) {
+            const newLatLng = [position.lat, position.lng];
+            mapInstanceRef.current.setView(newLatLng, mapInstanceRef.current.getZoom() || 5);
+            markerRef.current.setLatLng(newLatLng);
+        }
+    }, [position]);
+
+    return React.createElement('div', {
+        ref: mapContainerRef,
+        className: "h-64 w-full rounded-lg"
+    });
+};
+
 
 const EventForm = ({ onSubmit, isLoading }) => {
-  const [location, setLocation] = useState(groupedCities[0].cities[0].value);
+  const [position, setPosition] = useState({ lat: 52.52, lng: 13.405 }); // Berlin default
+  const [locationInput, setLocationInput] = useState('Loading initial location...');
+  const [isGeocoding, setIsGeocoding] = useState(true);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
   const today = new Date();
   const nextWeek = new Date(today);
   nextWeek.setDate(today.getDate() + 7);
   const [date, setDate] = useState(nextWeek.toISOString().split('T')[0]);
   const [time, setTime] = useState('14:00');
+  
+  const debounceTimeoutRef = useRef(null);
+  
+  // Initial location load
+  useEffect(() => {
+    (async () => {
+      const name = await reverseGeocode(position.lat, position.lng);
+      setLocationInput(name);
+      setIsGeocoding(false);
+    })();
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (searchQuery.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    
+    setIsSearching(true);
+    debounceTimeoutRef.current = setTimeout(async () => {
+        const results = await geocode(searchQuery);
+        setSearchResults(results);
+        setIsSearching(false);
+    }, 500);
+
+    return () => clearTimeout(debounceTimeoutRef.current);
+  }, [searchQuery]);
+
+  const handleLocationClick = useCallback(async (newPosition) => {
+    setPosition(newPosition);
+    setLocationInput('Identifying location...');
+    setIsGeocoding(true);
+    setSearchResults([]);
+    setSearchQuery('');
+    
+    const name = await reverseGeocode(newPosition.lat, newPosition.lng);
+    setLocationInput(name);
+    setIsGeocoding(false);
+  }, []);
+
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setLocationInput(query);
+    setSearchQuery(query);
+  };
+
+  const handleResultSelect = (result) => {
+    const newPosition = { lat: parseFloat(result.lat), lng: parseFloat(result.lon) };
+    setPosition(newPosition);
+    setLocationInput(result.display_name);
+    setSearchResults([]);
+    setSearchQuery('');
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (location && date && time) onSubmit({ location, date, time });
+    if (position && date && time) onSubmit({ position, date, time });
   };
   
-  const InputWrapper = ({ children, label, htmlFor }) => React.createElement('div', null, React.createElement('label', { htmlFor, className: "block text-sm font-medium text-gray-300" }, label), React.createElement('div', { className: "mt-1 relative" }, children));
+  const InputWrapper = ({ children, label, htmlFor }) => React.createElement('div', { className: "relative" }, React.createElement('label', { htmlFor, className: "block text-sm font-medium text-gray-300" }, label), React.createElement('div', { className: "mt-1 relative" }, children));
   const commonInputClass = "w-full bg-gray-900/50 border border-white/20 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition";
 
   return (
     React.createElement('form', { onSubmit: handleSubmit, className: "space-y-6" },
       React.createElement(InputWrapper, { label: "Location", htmlFor: "location" },
         React.createElement(LocationIcon),
-        React.createElement('select', { id: "location", value: location, onChange: (e) => setLocation(e.target.value), className: `${commonInputClass} appearance-none`, required: true },
-            groupedCities.map(group => (
-                React.createElement('optgroup', { key: group.country, label: group.country, className: "font-bold text-purple-300" },
-                    group.cities.map(city => React.createElement('option', { key: city.value, value: city.value, className: "bg-gray-800 text-white font-normal" }, city.name))
+        React.createElement('input', { 
+            type: "text", 
+            id: "location", 
+            value: locationInput, 
+            onChange: handleSearchChange,
+            className: `${commonInputClass} truncate`, 
+            placeholder: "Search or click map" 
+        }),
+        (isSearching || searchResults.length > 0) && React.createElement('div', { className: "absolute z-20 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto" },
+            isSearching && React.createElement('div', { className: "px-4 py-2 text-gray-400" }, "Searching..."),
+            !isSearching && searchResults.map(result => (
+                React.createElement('div', { key: result.place_id, onMouseDown: () => handleResultSelect(result), className: "px-4 py-3 text-white cursor-pointer hover:bg-gray-700 text-sm truncate" },
+                    result.display_name
                 )
             ))
         )
       ),
+      React.createElement(MapComponent, { onLocationChange: handleLocationClick, position: position }),
       React.createElement('div', { className: "grid grid-cols-1 sm:grid-cols-2 gap-6" },
         React.createElement(InputWrapper, { label: "Date", htmlFor: "date" },
           React.createElement(CalendarIcon),
@@ -364,8 +482,8 @@ const EventForm = ({ onSubmit, isLoading }) => {
         )
       ),
       React.createElement('div', null,
-        React.createElement('button', { type: "submit", disabled: isLoading, className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105" },
-          isLoading ? 'Consulting the Cosmos...' : 'Check Forecast'
+        React.createElement('button', { type: "submit", disabled: isLoading || isGeocoding, className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105" },
+          isLoading ? 'Consulting the Cosmos...' : (isGeocoding ? 'Identifying Location...' : 'Check Forecast')
         )
       )
     )
@@ -378,12 +496,9 @@ const HistoricalStats = ({ weather }) => React.createElement(React.Fragment, nul
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
-        const data = payload[0]?.payload;
         return React.createElement('div', { className: "bg-slate-800/80 backdrop-blur-sm border border-slate-600 rounded-lg p-3 text-white shadow-lg" },
             React.createElement('p', { className: "text-sm font-semibold mb-2" }, `Time: ${label}`),
-            React.createElement('p', { className: "text-sm text-purple-300" }, `Chance of Rain: ${data.precipitation}%`),
-            React.createElement('p', { className: "text-sm text-orange-300" }, `Temperature: ${data.temperature}°C`),
-            React.createElement('p', { className: "text-sm text-cyan-300" }, `Wind: ${data.wind} km/h`)
+            payload.map(p => React.createElement('p', { key: p.dataKey, style: { color: p.color }, className: "text-sm" }, `${p.name}: ${p.value}${p.unit}`))
         );
     }
     return null;
@@ -405,11 +520,16 @@ const ForecastDisplay = ({ forecast, eventDetails }) => {
     if (condition === 'very cold') return 'bg-sky-900/40';
     return 'bg-green-900/40';
   };
+  
+  const historicalChartData = isHistorical ? [
+      { name: 'Rainy Days', count: weather.rainyYears, fill: '#8884d8' },
+      { name: 'Dry Days', count: weather.totalYears - weather.rainyYears, fill: '#4b5563' },
+  ] : [];
 
   return (
     React.createElement('div', { className: "mt-8 animate-fade-in" },
         React.createElement('div', { className: `text-center p-8 rounded-t-2xl border-x border-t border-white/10 ${getBackgroundColor(gemini.condition, gemini.rainProbability)}` },
-            React.createElement('p', { className: "text-xl text-gray-300" }, `Forecast for ${eventDetails.location} on`),
+            React.createElement('p', { className: "text-xl text-gray-300 truncate" }, `Forecast for ${eventDetails.location} on`),
             React.createElement('p', { className: "text-xl text-gray-300" }, eventDate),
             React.createElement('div', { className: "flex justify-center items-center gap-4 mt-4 mb-2" },
                 React.createElement(WeatherIcon, { code: isHistorical ? weather.mostCommonCode : weather.weather_code, className: "h-16 w-16 text-white", probability: gemini.rainProbability }),
@@ -420,7 +540,8 @@ const ForecastDisplay = ({ forecast, eventDetails }) => {
         ),
         React.createElement('div', { className: "bg-white/5 p-8 rounded-b-2xl shadow-2xl border border-white/10 backdrop-blur-sm space-y-8" },
             isHistorical && React.createElement(HistoricalInfoBanner),
-            !isHistorical && hourly && React.createElement('div', null, React.createElement('h3', { className: "text-lg font-semibold text-purple-300 mb-4" }, `Hourly Outlook (around ${eventTime})`), React.createElement('div', { className: "h-64 w-full", ref: chartRef }, React.createElement(ResponsiveContainer, { width: "100%", height: "100%" }, React.createElement(LineChart, { data: hourly, margin: { top: 5, right: 20, left: -10, bottom: 5 } }, React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "rgba(255, 255, 255, 0.1)" }), React.createElement(XAxis, { dataKey: "time", stroke: "#9ca3af", fontSize: 12 }), React.createElement(YAxis, { unit: "%", stroke: "#9ca3af", fontSize: 12, domain: [0, 100] }), React.createElement(Tooltip, { content: React.createElement(CustomTooltip) }), React.createElement(Line, { type: "monotone", dataKey: "precipitation", name: "Chance of Rain", stroke: "#a78bfa", strokeWidth: 3, dot: { r: 4, strokeWidth: 2, fill: '#a78bfa', fillOpacity: 0.8 }, activeDot: { r: 8, stroke: '#c4b5fd', strokeWidth: 2 } })))),),
+            isHistorical && React.createElement('div', { ref: chartRef }, React.createElement('h3', { className: "text-lg font-semibold text-purple-300 mb-4 text-center" }, `Historical Pattern (Last ${weather.totalYears} Years)`), React.createElement('div', { className: "h-64 w-full" }, React.createElement(ResponsiveContainer, { width: "100%", height: "100%" }, React.createElement(BarChart, { data: historicalChartData, margin: { top: 5, right: 20, left: -10, bottom: 5 } }, React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "rgba(255, 255, 255, 0.1)" }), React.createElement(XAxis, { dataKey: "name", stroke: "#9ca3af" }), React.createElement(YAxis, { label: { value: 'Years', angle: -90, position: 'insideLeft', fill: '#9ca3af', dy: 40 }, stroke: "#9ca3af" }), React.createElement(Tooltip, { cursor: { fill: 'transparent' }, contentStyle: { backgroundColor: 'rgba(31, 41, 55, 0.8)', border: '1px solid #4b5563' } }), React.createElement(Bar, { dataKey: "count", name: "Number of Years" }, historicalChartData.map((entry, index) => React.createElement(Cell, { key: `cell-${index}`, fill: entry.fill }))))))),
+            !isHistorical && hourly && React.createElement('div', { ref: chartRef }, React.createElement('h3', { className: "text-lg font-semibold text-purple-300 mb-4" }, `Hourly Outlook (around ${eventTime})`), React.createElement('div', { className: "h-64 w-full" }, React.createElement(ResponsiveContainer, { width: "100%", height: "100%" }, React.createElement(LineChart, { data: hourly, margin: { top: 5, right: 20, left: -10, bottom: 5 } }, React.createElement(CartesianGrid, { strokeDasharray: "3 3", stroke: "rgba(255, 255, 255, 0.1)" }), React.createElement(XAxis, { dataKey: "time", stroke: "#9ca3af", fontSize: 12 }), React.createElement(YAxis, { yAxisId: "left", unit: "%", stroke: "#a78bfa", fontSize: 12, domain: [0, 100] }), React.createElement(YAxis, { yAxisId: "right", orientation: "right", unit: "°C", stroke: "#fb923c", fontSize: 12 }), React.createElement(Tooltip, { content: React.createElement(CustomTooltip) }), React.createElement(Legend, { verticalAlign: "top", wrapperStyle: { paddingBottom: '20px' } }), React.createElement(Line, { yAxisId: "left", type: "monotone", dataKey: "precipitation", name: "Chance of Rain", stroke: "#a78bfa", strokeWidth: 3, dot: { r: 4, fill: '#a78bfa' }, activeDot: { r: 8, stroke: '#c4b5fd', strokeWidth: 2 }, unit: "%" }), React.createElement(Line, { yAxisId: "right", type: "monotone", dataKey: "temperature", name: "Temperature", stroke: "#fb923c", strokeWidth: 2, dot: false, activeDot: { r: 8 }, unit: "°C" }))))),
             React.createElement('div', { className: "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-center border-t border-white/10 pt-6" }, isHistorical ? React.createElement(HistoricalStats, { weather: weather }) : React.createElement(DailyStats, { weather: weather })),
             React.createElement(DownloadButtons, { forecast: forecast, eventDetails: eventDetails, chartRef: chartRef })
         )
@@ -438,17 +559,21 @@ const App = () => {
     setIsLoading(true);
     setError(null);
     setForecast(null);
-    setEventDetails(details);
+    
     try {
-      const coordinates = await getCoordinates(details.location);
-      if (!coordinates) throw new Error("Could not find location. Please try a more specific address or city.");
+      const locationName = await reverseGeocode(details.position.lat, details.position.lng);
+      const completeDetails = { ...details, location: locationName };
+      setEventDetails(completeDetails);
+
+      const coordinates = { latitude: details.position.lat, longitude: details.position.lng };
       const eventDate = new Date(details.date + 'T00:00:00');
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
       if (diffDays <= 15) {
         const weather = await getWeather(coordinates.latitude, coordinates.longitude, details.date);
-        if (!weather || !weather.hourly || weather.hourly.time.length === 0) throw new Error("Could not retrieve weather data.");
+        if (!weather || !weather.hourly || weather.hourly.time.length === 0) throw new Error("Could not retrieve weather data for the selected location.");
         const eventDateTime = new Date(`${details.date}T${details.time}`);
         const eventHourIndex = weather.hourly.time.findIndex(t => new Date(t).getHours() === eventDateTime.getHours());
         if (eventHourIndex === -1) throw new Error("Weather data for the specific time is not available.");
